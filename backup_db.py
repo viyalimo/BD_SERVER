@@ -2,31 +2,58 @@ import os
 import datetime
 import subprocess
 import time
+import configparser
+
+# Функция для чтения конфигурации
+def read_config():
+    """Читает параметры подключения к базе данных и время последнего бэкапа из `server_config.ini`"""
+    base_dir = os.path.dirname(os.path.abspath(__file__))  # Определяем текущую папку
+    filename = os.path.join(base_dir, "server_config.ini")  # Путь к конфигу
+
+    if not os.path.exists(filename):
+        raise FileNotFoundError(f"Файл конфигурации не найден: {filename}")
+
+    config = configparser.ConfigParser()
+    config.read(filename)
+
+    try:
+        db_settings = {
+            "host": config["database"]["host"].strip(),
+            "database": config["database"]["database"].strip(),
+            "user": config["database"]["user"].strip(),
+            "password": config["database"]["password"].strip(),
+        }
+        backup_settings = {
+            "last_backup_time": config["backup"].get("last_backup_time", "1970-01-01 00:00:00").strip()
+        }
+        return db_settings, backup_settings, filename, config
+    except KeyError as e:
+        raise KeyError(f"Ошибка в конфигурационном файле: отсутствует ключ {e}")
+
+# Загружаем конфиг
+db_config, backup_config, config_file, config_parser = read_config()
 
 # Параметры подключения
-DB_USER = "root"
-DB_PASSWORD = "root"
-DB_NAME = "mmi"
-BACKUP_DIR = r"C:\Users\user1387\PycharmProjects\FastAPIProject\BD_DUMP"
+DB_USER = db_config["user"]
+DB_PASSWORD = db_config["password"]
+DB_NAME = db_config["database"]
+BACKUP_DIR = os.path.join(os.path.dirname(__file__), "BD_DUMP")
 
-# Полный путь к mysqldump
+# Полный путь к mysqldump (при необходимости можешь вынести в конфиг)
 MYSQLDUMP_PATH = "C:\\wamp64\\bin\\mysql\\mysql8.3.0\\bin\\mysqldump.exe"
 
-# Файл для хранения времени последнего бэкапа
-LAST_BACKUP_FILE = os.path.join(BACKUP_DIR, "last_backup.txt")
-
 def get_last_backup_time():
-    """Получаем время последнего бэкапа из файла."""
-    if os.path.exists(LAST_BACKUP_FILE):
-        with open(LAST_BACKUP_FILE, "r") as file:
-            last_time = file.read().strip()
-            return datetime.datetime.strptime(last_time, "%Y-%m-%d %H:%M:%S")
-    return None
+    """Получаем время последнего бэкапа из конфигурационного файла"""
+    try:
+        return datetime.datetime.strptime(backup_config["last_backup_time"], "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return datetime.datetime(1970, 1, 1)  # Если формат времени неправильный
 
 def set_last_backup_time():
-    """Записываем текущее время в файл последнего бэкапа."""
-    with open(LAST_BACKUP_FILE, "w") as file:
-        file.write(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    """Записываем текущее время в `server_config.ini`"""
+    config_parser.set("backup", "last_backup_time", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    with open(config_file, "w") as configfile:
+        config_parser.write(configfile)
 
 def create_backup():
     """Создаём резервную копию базы данных."""
@@ -42,7 +69,7 @@ def create_backup():
                 check=True
             )
         print(f"Резервная копия успешно создана: {backup_file}")
-        set_last_backup_time()  # Записываем время успешного выполнения
+        set_last_backup_time()  # Записываем новое время последнего бэкапа
     except subprocess.CalledProcessError as e:
         print(f"Ошибка при создании резервной копии: {e}")
 
@@ -62,7 +89,7 @@ def main():
     now = datetime.datetime.now()
 
     # Проверка: прошло ли 24 часа с последнего бэкапа
-    if not last_backup or (now - last_backup).total_seconds() > 86400:
+    if (now - last_backup).total_seconds() > 86400:
         create_backup()
         delete_old_backups()
     else:

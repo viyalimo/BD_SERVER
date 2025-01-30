@@ -2,33 +2,71 @@ import mysql.connector
 from mysql.connector import Error
 import hashlib  # Для хэширования паролей
 from Crypt.Crypt_controls import Crypt_controls
-
+import configparser
+import os
+import base64
 
 class BD_connector:
     def __init__(self):
+        self._config = self.read_config()
         self._connection, self._cursor = self.__connect_to_mysql()
         self.crp = Crypt_controls()
 
-    def __connect_to_mysql(self):
+    def image_to_base64(self, image_path):
         try:
-            # Параметры подключения
+            with open(image_path, "rb") as image_file:
+                # Чтение файла в байты
+                image_bytes = image_file.read()
+
+                # Преобразование в base64
+                encoded_image = base64.b64encode(image_bytes).decode('utf-8')
+                return encoded_image
+        except Exception as e:
+            print(f"Ошибка при конвертации изображения: {e}")
+            return None
+
+    @staticmethod
+    def read_config():
+        """Читает конфигурацию базы данных и сервера из `server_config.ini`"""
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Исправлено
+        filename = os.path.join(base_dir, "server_config.ini")
+
+        if not os.path.exists(filename):
+            raise FileNotFoundError(f"Файл конфигурации не найден: {filename}")
+
+        config = configparser.ConfigParser()
+        config.read(filename)
+
+        try:
+            db_settings = {
+                "host": config["database"]["host"].strip(),
+                "database": config["database"]["database"].strip(),
+                "user": config["database"]["user"].strip(),
+                "password": config["database"]["password"].strip(),
+            }
+            server_settings = {
+                "host": config["server"]["host"].strip(),
+                "port": int(config["server"]["port"]),
+            }
+            return {"database": db_settings, "server": server_settings}
+        except KeyError as e:
+            raise KeyError(f"Ошибка в конфигурационном файле: отсутствует ключ {e}")
+
+    def __connect_to_mysql(self):
+        """Подключается к MySQL с использованием конфигурационного файла"""
+        try:
             connection = mysql.connector.connect(
-                host='localhost',  # Адрес сервера базы данных
-                database='mmi',  # Имя базы данных
-                user='root',  # Имя пользователя
-                password='root'  # Пароль пользователя
+                host=self._config["database"]["host"],
+                database=self._config["database"]["database"],
+                user=self._config["database"]["user"],
+                password=self._config["database"]["password"]
             )
 
             if connection.is_connected():
                 print("Успешное подключение к базе данных")
+                print("Версия MySQL:", connection.get_server_info())
 
-                # Получаем информацию о сервере
-                db_info = connection.get_server_info()
-                print("Версия MySQL:", db_info)
-
-                # Возвращаем соединение и курсор
                 return connection, connection.cursor()
-
         except Error as e:
             print("Ошибка подключения к MySQL:", e)
             return None, None
@@ -103,8 +141,6 @@ class BD_connector:
         self._cursor.close()
         self._connection.close()
         print("Соединение закрыто")
-
-    # Функции для работы с таблицей products
 
     def add_product(self, product_name, category, manufacturer_id, price, total_purchases, color, photo_base64,
                     warehouse):
@@ -256,7 +292,7 @@ class BD_connector:
         try:
             # Конвертируем изображение в Base64, если путь указан
             if image_path:
-                logo_base64 = image_to_base64(image_path)
+                logo_base64 = self.image_to_base64(image_path)
                 if not logo_base64:
                     print("Ошибка конвертации изображения. Производитель не добавлен.")
                     return "Ошибка конвертации изображения"
@@ -504,92 +540,4 @@ class BD_connector:
                     return True
         else:
             return "Нет прав доступа!"
-
-
-
-import base64
-
-
-def image_to_base64(image_path):
-    try:
-        with open(image_path, "rb") as image_file:
-            # Чтение файла в байты
-            image_bytes = image_file.read()
-
-            # Преобразование в base64
-            encoded_image = base64.b64encode(image_bytes).decode('utf-8')
-            return encoded_image
-    except Exception as e:
-        print(f"Ошибка при конвертации изображения: {e}")
-        return None
-
-def base64_to_image(base64_data, output_path):
-    try:
-        # Декодируем строку base64 в байты
-        image_data = base64.b64decode(base64_data)
-
-        # Записываем байты в файл с расширением .jpg
-        with open(output_path, "wb") as image_file:
-            image_file.write(image_data)
-
-        print(f"Изображение успешно сохранено в {output_path}")
-    except Exception as e:
-        print(f"Ошибка при сохранении изображения: {e}")
-
-#
-# if __name__ == '__main__':
-#     BD = BD_connector()
-#     print(BD.manage_state_shop(15))
-
-# if __name__ == '__main__':
-#     BD = BD_connector()
-#     for i in BD.search_products(color="чёрный"):
-#         print(i)
-# if __name__ == '__main__':
-#     BD = BD_connector()
-#     print(BD.get_user_token("Alice"))
-#     if BD.get_user_token("Alice"):
-#         print("AHAHHAHHAHAHHAH")
-#     else:
-#         print("DDDDDDDDDDDDDDDDDDDDDD")
-
-
-"""Добавление продукта"""
-# if __name__ == "__main__":
-#     connector = BD_connector()
-#     # Указываем путь к изображению продукта
-#     image_path = r"C:\Users\user1387\PycharmProjects\FastAPIProject\images\YRS-24B.jpg"
-#     # Конвертируем изображение в строку Base64
-#     photo_base64 = image_to_base64(image_path)
-#     # Данные для добавления товара
-#     product_name = "YRS-24B"
-#     category = "Духовые"
-#     manufacturer_id = 1  # ID производителя из таблицы `manufacturers`
-#     price = 990.00
-#     total_purchases = 1
-#     color = "белый"
-#     warehouse = 100
-#     # Вызов метода для добавления товара
-#     connector.add_product(
-#         product_name=product_name,
-#         category=category,
-#         manufacturer_id=manufacturer_id,
-#         price=price,
-#         total_purchases=total_purchases,
-#         color=color,
-#         photo_base64=photo_base64,  # Передаём изображение в формате Base64
-#         warehouse=warehouse
-#     )
-
-"""Добавление производителя"""
-# if __name__ == "__main__":
-#     connector = BD_connector()
-#
-#     # Указываем путь к изображению
-#     image_path = r"C:\Users\user1387\PycharmProjects\FastAPIProject\images\MARSHALL.jpg"
-#
-#     # Добавляем производителя с изображением
-#     connector.add_manufacturer("MARSHALL", image_path)
-
-
 

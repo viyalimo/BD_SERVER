@@ -1,3 +1,4 @@
+import configparser
 import os
 from typing import Optional
 from Crypt.Crypt_controls import Crypt_controls
@@ -10,6 +11,29 @@ from BD import DB  # Импортируем ваш класс DB
 from decimal import Decimal
 from Cart import cart_manager
 from Admin import admin_muve
+
+
+# Функция для чтения конфигурации
+def read_config():
+    """Читает IP и порт сервера из `server_config.ini`"""
+    base_dir = os.path.dirname(os.path.abspath(__file__))  # Путь к текущему файлу
+    filename = os.path.join(base_dir, "server_config.ini")  # Путь к конфигу
+
+    if not os.path.exists(filename):
+        raise FileNotFoundError(f"Файл конфигурации не найден: {filename}")
+
+    config = configparser.ConfigParser()
+    config.read(filename)
+
+    try:
+        server_host = config["server"]["host"].strip()
+        server_port = int(config["server"]["port"])
+        return server_host, server_port
+    except KeyError as e:
+        raise KeyError(f"Ошибка в конфигурационном файле: отсутствует ключ {e}")
+
+# Читаем конфиг перед запуском
+server_host, server_port = read_config()
 app = FastAPI()
 
 
@@ -422,12 +446,15 @@ def main():
 
 if __name__ == "__main__":
     import subprocess
-    script_path = r"C:\Users\user1387\PycharmProjects\FastAPIProject\backup_db.py"
+    script_path = os.path.join(os.path.dirname(__file__), "backup_db.py")
+
     try:
         print("Запуск скрипта для создания резервной копии...")
         subprocess.run(["python", script_path], check=True)
         print("Скрипт успешно выполнен.")
     except subprocess.CalledProcessError as e:
         print(f"Ошибка при выполнении скрипта: {e}")
+
     main()
+
 
